@@ -68,16 +68,14 @@ func Start(workers int, db *sql.DB) {
 			}
 			depatments = append(depatments, d)
 		}
-		fmt.Printf("Found %d records in departments\n", len(depatments))
+		fmt.Printf("[INFO] Found %d records in departments\n", len(depatments))
 	} else {
 		for _, s := range specialities {
 			deps := GetDepartments(s, db)
 			depatments = append(depatments, deps...)
-			fmt.Printf("Found %d department for %s speciality\n", len(deps), s.Nom)
+			fmt.Printf("[DEBUG] Found %d department for %s speciality\n", len(deps), s.Nom)
 		}
 	}
-
-	fmt.Printf("[INFO] Found %d records in departments\n", len(depatments))
 
 	count = 0
 	err = db.QueryRow(`SELECT COUNT(*) FROM cities`).Scan(&count)
@@ -101,12 +99,12 @@ func Start(workers int, db *sql.DB) {
 			}
 			cities = append(cities, c)
 		}
-		fmt.Printf("Found %d records in cities\n", len(depatments))
+		fmt.Printf("[INFO] Found %d records in cities\n", len(cities))
 	} else {
 		for _, d := range depatments {
 			cits := GetCities(d, db)
 			cities = append(cities, cits...)
-			fmt.Printf("Found %d cities for %s department and speciliaty %s\n", len(cits), d.Code, d.Speciality)
+			fmt.Printf("[DEBUG] Found %d cities for %s department and speciliaty %s\n", len(cits), d.Code, d.Speciality)
 		}
 	}
 
