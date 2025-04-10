@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"regexp"
@@ -14,18 +15,23 @@ import (
 )
 
 func Start(workers int, db *sql.DB) {
-	fmt.Println("Starting crawler...")
-
 	var count int
 	var specialities []Speciality
 	var depatments []Department
-	var cities []City
+	// var cities []City
+	jobsSize := 1000
+	fmt.Printf("[DEBUG] Creatig a queue of %d\n", jobsSize)
+	jobs := make(chan CrawlJob, jobsSize)
+
+	// wg := &sync.WaitGroup{}
+	var wg sync.WaitGroup
 
 	err := db.QueryRow(`SELECT COUNT(*) FROM specialities`).Scan(&count)
 	if err != nil {
 		log.Printf("Failed to check specialities count: %v", err)
 		return
 	}
+
 	if count > 0 {
 		fmt.Println("Records already exists in DB, retrieving it ...")
 		rows, err := db.Query(`SELECT nom, url FROM specialities`)
@@ -77,77 +83,41 @@ func Start(workers int, db *sql.DB) {
 		}
 	}
 
-	count = 0
-	err = db.QueryRow(`SELECT COUNT(*) FROM cities`).Scan(&count)
-	if err != nil {
-		log.Printf("Failed to check cities count: %v", err)
-		return
-	}
-
-	if count > 0 {
-		fmt.Println("Records already exists in DB, retrieving it ...")
-		rows, err := db.Query(`SELECT nom, url FROM cities`)
-		if err != nil {
-			log.Fatalf("Failed to query cities: %v", err)
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var c City
-			if err := rows.Scan(&c.Name, &c.URL); err != nil {
-				log.Printf("Failed to scan cities: %v", err)
-				continue
-			}
-			cities = append(cities, c)
-		}
-		fmt.Printf("[INFO] Found %d records in cities\n", len(cities))
-	} else {
-		for _, d := range depatments {
-			cits := GetCities(d, db)
-			cities = append(cities, cits...)
-			fmt.Printf("[DEBUG] Found %d cities for %s department and speciliaty %s\n", len(cits), d.Code, d.Speciality)
-		}
-	}
-
-	jobs := make(chan CrawlJob, 100)
-
-	wg := &sync.WaitGroup{}
-
 	for i := 0; i < workers; i++ {
-		go worker(jobs, wg, i)
-
+		go workerCity(jobs, &wg, db, i)
 	}
-	// go createJobs(jobs, wg, depatments)
 
-	go func() {
-		wg.Wait()
-		close(jobs)
-	}()
+	for _, d := range depatments {
+		wg.Add(1)
+		jobs <- CrawlJob{Department: d}
+		fmt.Printf("[DEBUG] Adding job in the queue %s : queue length is %d\n", d.Name, len(jobs))
+	}
+	close(jobs)
 
+	wg.Wait()
+	fmt.Println("[DEBUG] queue exhausted")
 }
 
-func createJobs(jobs chan<- CrawlJob, wg *sync.WaitGroup, departments []Department) {
-	// for _, d := range departments {
-	// 	cities := GetCities(d)
+func workerCity(jobs <-chan CrawlJob, wg *sync.WaitGroup, db *sql.DB, id int) {
 
-	// 	for _, c := range cities {
-	// 		wg.Add(1)
-	// 		jobs <- CrawlJob{Department: d, City: c}
-	// 	}
-
-	// }
-}
-
-func worker(jobs <-chan CrawlJob, wg *sync.WaitGroup, id int) {
 	for job := range jobs {
-		fmt.Printf("[DEBUG] Worker %d starting - %s, %s, %s\n", id, job.Speciality.Nom, job.Department.Code, job.City.Name)
+		fmt.Printf("[DEBUG] Worker %d start scrapping %s\n", id, job.Department.URL)
 
-		details := GetDetails(job.Speciality, job.Department, job.City)
-		for _, url := range details {
-			doc := GetDoctor(url)
+		cities := GetCities(job.Department, db)
+		// fmt.Printf("[DEBUG] Found %d cities for %s department and speciliaty %s\n", len(cities), job.Department.Name, job.Department.Speciality)
 
-			fmt.Println(doc)
+		if cities == nil {
+			return
 		}
-		fmt.Printf("[DEBUG] Worker %d done", id)
+
+		city := cities[rand.Intn(len(cities))]
+
+		doctor := GetDetails(city)
+		doctor = GetDoctor(doctor)
+
+		//save doctor in db
+
+		// fmt.Println(doctor)
 		wg.Done()
 	}
 }
@@ -304,13 +274,39 @@ func GetCities(d Department, db *sql.DB) []City {
 	return cities
 }
 
-func GetDetails(s Speciality, d Department, c City) []string {
-	return []string{}
+func GetDetails(c City) Doctor {
+	body, err := getUrl(c.URL)
+
+	if err != nil {
+		return Doctor{}
+	}
+	ulRegex := regexp.MustCompile(`href="(/professionnels-de-sante/fiche-detaillee-[^"]+)"><strong>([^<]+)</strong>\s*([^<]+)</a>`)
+
+	matches := ulRegex.FindAllStringSubmatch(body, -1)
+
+	if matches == nil {
+		return Doctor{}
+	}
+
+	match := matches[rand.Intn(len(matches))]
+
+	url := match[1]
+	lastName := match[2]
+	firstName := match[3]
+	fullName := lastName + " " + firstName
+	details := Doctor{
+		Nom:        fullName,
+		UrlFiche:   url,
+		Speciality: c.Speciality,
+		CodePostal: c.Code,
+		Ville:      c.Name,
+	}
+	return details
 }
 
-func GetDoctor(url string) Doctor {
+func GetDoctor(doctor Doctor) Doctor {
 	time.Sleep(100 * time.Millisecond)
-	return Doctor{}
+	return doctor
 }
 
 func getUrl(url string) (body string, error error) {

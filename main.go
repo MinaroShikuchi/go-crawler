@@ -17,10 +17,14 @@ func main() {
 	flag.IntVar(&workers, "workers", 1, "Number of worker")
 	flag.Parse()
 
-	db, err := sql.Open("sqlite3", "./crawler.db")
+	db, err := sql.Open("sqlite3", "./crawler.db?_busy_timeout=1000&_journal_mode=WAL")
 	if err != nil {
 		log.Fatalf("Failed to open database: %v", err)
 	}
+
+	db.SetMaxOpenConns(20) // max open connections
+	db.SetMaxIdleConns(10) // how many idle ones can stick around
+
 	defer db.Close()
 
 	sqlBytes, err := os.ReadFile("schema.sql")
@@ -32,6 +36,6 @@ func main() {
 		log.Fatalf("Failed to create table: %v", err)
 	}
 
-	fmt.Printf("Starting cralwer %d\n", workers)
+	fmt.Printf("[INFO] Starting %d cralwer(s)\n", workers)
 	crawler.Start(workers, db)
 }
