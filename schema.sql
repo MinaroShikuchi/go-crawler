@@ -1,0 +1,22 @@
+CREATE TABLE IF NOT EXISTS specialities (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	nom TEXT,
+	url TEXT UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS departments (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	nom TEXT,
+	url TEXT UNIQUE,
+    code TEXT,
+    speciality TEXT
+);
+
+-- DROP TABLE IF EXISTS cities;
+CREATE TABLE IF NOT EXISTS cities (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	nom TEXT,
+	url TEXT UNIQUE,
+    code TEXT,
+    speciality TEXT
+);
